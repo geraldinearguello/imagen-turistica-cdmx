@@ -1,1 +1,114 @@
-import osimport numpy as npimport pandas as pdimport matplotlib.pyplot as pltfrom analisis import utilidades as udef centroide(e):    c = e.mean(axis=0)    return c / np.linalg.norm(c)def alineacion(df, emb, fuente, dmo, fuentes):    c_dmo = centroide(emb[(df[fuente] == dmo).values])    vis = [f for f in fuentes if f != dmo]    filas, cents = [], []    for f in vis:        m = (df[fuente] == f).values        c = centroide(emb[m])        cents.append(c)        filas.append((f, m.sum(), c @ c_dmo))    if len(vis) > 1:        m = (df[fuente] != dmo).values        filas.append(("visitantes", m.sum(), centroide(emb[m]) @ c_dmo))        filas.append(("visitantes balanceado", m.sum(), centroide(np.array(cents)) @ c_dmo))    return pd.DataFrame(filas, columns=["fuente", "textos", "alineacion"]).round(3)def graf_alineacion(al, dmo, fuentes, paleta, ruta):    col = {**u.colores(fuentes, paleta), "visitantes": "#8b8f98", "visitantes balanceado": "#c4c7cc"}    tra = {**u.tramas(fuentes), "visitantes": "oo", "visitantes balanceado": "++"}    fig, ax = plt.subplots(figsize=(9, 0.8 * len(al) + 1.5))    y = np.arange(len(al))[::-1]    for k, r in enumerate(al.itertuples()):        ax.barh(y[k], r.alineacion, color=col[r.fuente], hatch=tra[r.fuente], edgecolor="white")        ax.text(r.alineacion + 0.01, y[k], f"{r.alineacion:.2f}", va="center")    ax.set_yticks(y, [f"{u.nombre(f)}\n(n={n:,})" for f, n in zip(al["fuente"], al["textos"])])    ax.set_xlim(0, 1.05)    ax.set_xlabel(f"Similitud con {u.nombre(dmo)} (1 = mismo significado promedio)")    ax.set_title(f"¿Qué tanto se parece cada fuente a {u.nombre(dmo)}?")    ax.spines[["top", "right"]].set_visible(False)    u.guardar(fig, ruta)def matriz(df, emb, fuente, fuentes):    c = np.array([centroide(emb[(df[fuente] == f).values]) for f in fuentes])    return pd.DataFrame(c @ c.T, index=fuentes, columns=fuentes).round(3)def graf_matriz(m, paleta, ruta):    et = [u.nombre(f) for f in m.index]    fig, ax = plt.subplots(figsize=(1.4 * len(m) + 2, 1.2 * len(m) + 1.5))    im = ax.imshow(m.values, cmap=paleta)    for i in range(len(m)):        for j in range(len(m)):            v = m.values[i, j]            ax.text(j, i, f"{v:.2f}", ha="center", va="center",                    color="black" if v > m.values.mean() else "white")    ax.set_xticks(range(len(m)), et, rotation=30, ha="right")    ax.set_yticks(range(len(m)), et)    ax.set_title("Similitud entre todas las fuentes")    fig.colorbar(im, ax=ax, shrink=0.8)    u.guardar(fig, ruta)def brechas(df, fuente, dmo, g):    d = df[(df["sentimiento"] == g[:-1]) & (df["tema_" + g] >= 0)]    es = d[fuente] == dmo    t = pd.DataFrame({        "pct_dmo": d[es]["nombre_" + g].value_counts(normalize=True) * 100,        "pct_visitantes": d[~es]["nombre_" + g].value_counts(normalize=True) * 100,    }).fillna(0)    t["diferencia"] = t["pct_visitantes"] - t["pct_dmo"]    return t.sort_values("diferencia").round(1)def graf_brechas(t, dmo, g, paleta, ruta):    c_dmo = plt.get_cmap(paleta)(0.15)    fig, ax = plt.subplots(figsize=(10, 0.7 * len(t) + 2))    y = np.arange(len(t))    ax.hlines(y, t["pct_dmo"], t["pct_visitantes"], color="#bfc3c9", lw=3, zorder=1)    ax.scatter(t["pct_dmo"], y, s=150, marker="s", color=c_dmo, zorder=2, label=u.nombre(dmo))    ax.scatter(t["pct_visitantes"], y, s=120, marker="o", color="#777777", edgecolors="black",               zorder=2, label="Visitantes")    for k, r in enumerate(t.itertuples()):        ax.text(max(r.pct_dmo, r.pct_visitantes) + 0.8, k, f"{r.diferencia:+.1f} pp", va="center")    ax.set_yticks(y, t.index)    ax.set_xlabel("% de textos del grupo")    ax.set_title(f"Brechas por tema: {u.nombre(dmo)} vs. visitantes (textos {g})")    ax.legend(frameon=False, ncol=2, loc="upper center", bbox_to_anchor=(0.5, -0.12))    ax.spines[["top", "right"]].set_visible(False)    u.guardar(fig, ruta)def comparar(df, emb, fuente, dmo, paleta, salida):    out = f"{salida}/comparacion"    os.makedirs(out, exist_ok=True)    fuentes = u.orden(df, fuente, dmo)    al = alineacion(df, emb, fuente, dmo, fuentes)    al.to_csv(f"{out}/1_alineacion.csv", index=False)    graf_alineacion(al, dmo, fuentes, paleta, f"{out}/1_alineacion.png")    m = matriz(df, emb, fuente, fuentes)    m.to_csv(f"{out}/1_matriz.csv")    graf_matriz(m, paleta, f"{out}/1_matriz.png")    br = {}    for g in ["positivos", "negativos"]:        n_dmo = ((df[fuente] == dmo) & (df["sentimiento"] == g[:-1])).sum()        if n_dmo < 30:            print(f"  Brechas {g}: la DMO solo tiene {n_dmo} textos, no se calculan")            continue        br[g] = brechas(df, fuente, dmo, g)        br[g].to_csv(f"{out}/2_brechas_{g}.csv")        graf_brechas(br[g], dmo, g, paleta, f"{out}/2_brechas_{g}.png")    return al, br
+import os
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from analisis import utilidades as u
+
+
+def centroide(e):
+    c = e.mean(axis=0)
+    return c / np.linalg.norm(c)
+
+
+def alineacion(df, emb, fuente, dmo, fuentes):
+    c_dmo = centroide(emb[(df[fuente] == dmo).values])
+    vis = [f for f in fuentes if f != dmo]
+    filas, cents = [], []
+    for f in vis:
+        m = (df[fuente] == f).values
+        c = centroide(emb[m])
+        cents.append(c)
+        filas.append((f, m.sum(), c @ c_dmo))
+    if len(vis) > 1:
+        m = (df[fuente] != dmo).values
+        filas.append(("visitantes", m.sum(), centroide(emb[m]) @ c_dmo))
+        filas.append(("visitantes balanceado", m.sum(), centroide(np.array(cents)) @ c_dmo))
+    return pd.DataFrame(filas, columns=["fuente", "textos", "alineacion"]).round(3)
+
+
+def graf_alineacion(al, dmo, fuentes, paleta, ruta):
+    col = {**u.colores(fuentes, paleta), "visitantes": "#8b8f98", "visitantes balanceado": "#c4c7cc"}
+    tra = {**u.tramas(fuentes), "visitantes": "oo", "visitantes balanceado": "++"}
+    fig, ax = plt.subplots(figsize=(9, 0.8 * len(al) + 1.5))
+    y = np.arange(len(al))[::-1]
+    for k, r in enumerate(al.itertuples()):
+        ax.barh(y[k], r.alineacion, color=col[r.fuente], hatch=tra[r.fuente], edgecolor="white")
+        ax.text(r.alineacion + 0.01, y[k], f"{r.alineacion:.2f}", va="center")
+    ax.set_yticks(y, [f"{u.nombre(f)}\n(n={n:,})" for f, n in zip(al["fuente"], al["textos"])])
+    ax.set_xlim(0, 1.05)
+    ax.set_xlabel(f"Similitud con {u.nombre(dmo)} (1 = mismo significado promedio)")
+    ax.set_title(f"¿Qué tanto se parece cada fuente a {u.nombre(dmo)}?")
+    ax.spines[["top", "right"]].set_visible(False)
+    u.guardar(fig, ruta)
+
+
+def matriz(df, emb, fuente, fuentes):
+    c = np.array([centroide(emb[(df[fuente] == f).values]) for f in fuentes])
+    return pd.DataFrame(c @ c.T, index=fuentes, columns=fuentes).round(3)
+
+
+def graf_matriz(m, paleta, ruta):
+    et = [u.nombre(f) for f in m.index]
+    fig, ax = plt.subplots(figsize=(1.4 * len(m) + 2, 1.2 * len(m) + 1.5))
+    im = ax.imshow(m.values, cmap=paleta)
+    for i in range(len(m)):
+        for j in range(len(m)):
+            v = m.values[i, j]
+            ax.text(j, i, f"{v:.2f}", ha="center", va="center",
+                    color="black" if v > m.values.mean() else "white")
+    ax.set_xticks(range(len(m)), et, rotation=30, ha="right")
+    ax.set_yticks(range(len(m)), et)
+    ax.set_title("Similitud entre todas las fuentes")
+    fig.colorbar(im, ax=ax, shrink=0.8)
+    u.guardar(fig, ruta)
+
+
+def brechas(df, fuente, dmo, g):
+    d = df[(df["sentimiento"] == g[:-1]) & (df["tema_" + g] >= 0)]
+    es = d[fuente] == dmo
+    t = pd.DataFrame({
+        "pct_dmo": d[es]["nombre_" + g].value_counts(normalize=True) * 100,
+        "pct_visitantes": d[~es]["nombre_" + g].value_counts(normalize=True) * 100,
+    }).fillna(0)
+    t["diferencia"] = t["pct_visitantes"] - t["pct_dmo"]
+    return t.sort_values("diferencia").round(1)
+
+
+def graf_brechas(t, dmo, g, paleta, ruta):
+    c_dmo = plt.get_cmap(paleta)(0.15)
+    fig, ax = plt.subplots(figsize=(10, 0.7 * len(t) + 2))
+    y = np.arange(len(t))
+    ax.hlines(y, t["pct_dmo"], t["pct_visitantes"], color="#bfc3c9", lw=3, zorder=1)
+    ax.scatter(t["pct_dmo"], y, s=150, marker="s", color=c_dmo, zorder=2, label=u.nombre(dmo))
+    ax.scatter(t["pct_visitantes"], y, s=120, marker="o", color="#777777", edgecolors="black",
+               zorder=2, label="Visitantes")
+    for k, r in enumerate(t.itertuples()):
+        ax.text(max(r.pct_dmo, r.pct_visitantes) + 0.8, k, f"{r.diferencia:+.1f} pp", va="center")
+    ax.set_yticks(y, t.index)
+    ax.set_xlabel("% de textos del grupo")
+    ax.set_title(f"Brechas por tema: {u.nombre(dmo)} vs. visitantes (textos {g})")
+    ax.legend(frameon=False, ncol=2, loc="upper center", bbox_to_anchor=(0.5, -0.12))
+    ax.spines[["top", "right"]].set_visible(False)
+    u.guardar(fig, ruta)
+
+
+def comparar(df, emb, fuente, dmo, paleta, salida):
+    out = f"{salida}/comparacion"
+    os.makedirs(out, exist_ok=True)
+    fuentes = u.orden(df, fuente, dmo)
+    al = alineacion(df, emb, fuente, dmo, fuentes)
+    al.to_csv(f"{out}/1_alineacion.csv", index=False)
+    graf_alineacion(al, dmo, fuentes, paleta, f"{out}/1_alineacion.png")
+    m = matriz(df, emb, fuente, fuentes)
+    m.to_csv(f"{out}/1_matriz.csv")
+    graf_matriz(m, paleta, f"{out}/1_matriz.png")
+    br = {}
+    for g in ["positivos", "negativos"]:
+        n_dmo = ((df[fuente] == dmo) & (df["sentimiento"] == g[:-1])).sum()
+        if n_dmo < 30:
+            print(f"  Brechas {g}: la DMO solo tiene {n_dmo} textos, no se calculan")
+            continue
+        br[g] = brechas(df, fuente, dmo, g)
+        br[g].to_csv(f"{out}/2_brechas_{g}.csv")
+        graf_brechas(br[g], dmo, g, paleta, f"{out}/2_brechas_{g}.png")
+    return al, br

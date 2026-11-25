@@ -1,1 +1,380 @@
-import osimport sysimport jsonimport pandas as pdimport matplotlib.pyplot as pltimport streamlit as stfrom wordcloud import WordCloudfrom analisis import utilidades as ufrom analisis.exploracion import NEG, DOMINIOSAL = sys.argv[1] if len(sys.argv) > 1 else "salidas"FONDO, TEXTO, GRIS = "#0E1117", "#FAFAFA", "#8B8F98"PALETAS = ["viridis", "cividis", "plasma", "inferno"]st.set_page_config(page_title="Imagen turística", layout="wide")plt.rcParams.update({    "figure.facecolor": FONDO, "axes.facecolor": FONDO, "savefig.facecolor": FONDO,    "text.color": TEXTO, "axes.labelcolor": GRIS, "xtick.color": GRIS,    "ytick.color": TEXTO, "axes.edgecolor": GRIS, "font.size": 8,    "axes.titlesize": 9, "axes.spines.top": False, "axes.spines.right": False,    "hatch.color": FONDO,})st.markdown("""<style>.block-container {padding: 0.6rem 1.2rem 0 1.2rem; max-width: 100%;}header, footer {visibility: hidden; height: 0;}h1 {font-size: 1.15rem !important; line-height: 1.6 !important; margin: 0 !important; padding: 0 !important;}.sub {color: #8B8F98; font-size: 0.78rem; line-height: 1.5;}.sec {font-size: 0.85rem; font-weight: 600; line-height: 1.6; margin: 0;}.pend {border: 1px dashed #4A4E57; border-radius: 8px; padding: 0.8rem; margin-top: 0.4rem;       color: #8B8F98; font-size: 0.8rem; display: flex; flex-direction: column;       justify-content: center; align-items: center; text-align: center;}.pend b {color: #FAFAFA; font-size: 0.9rem; margin-bottom: 0.3rem;}.caja {background: #1A1D24; border-radius: 8px; padding: 0.7rem 0.9rem; margin-top: 0.4rem;       color: #D0D3D9; font-size: 0.78rem; line-height: 1.45; overflow-y: auto;}.caja b {color: #FAFAFA;}[data-testid="stMetric"] {background: #1A1D24; border-radius: 8px; padding: 0.2rem 0.8rem;}[data-testid="stMetricLabel"] p {font-size: 0.78rem;}[data-testid="stMetricValue"] {font-size: 1.15rem;}[data-testid="stVerticalBlock"] {gap: 0.35rem;}[data-testid="stMarkdown"], [data-testid="stMarkdownContainer"],[data-testid="stMarkdownContainer"] > * {margin-bottom: 0 !important;}.sec, h1 {display: block; padding-bottom: 0.25rem !important; overflow: visible;}[data-testid="stImage"] img, .stImage img {max-height: 48vh; object-fit: contain;}</style>""", unsafe_allow_html=True)@st.cache_datadef leer(ruta, indice=False):    r = f"{SAL}/{ruta}"    if not os.path.exists(r):        return None    return pd.read_csv(r, index_col=0) if indice else pd.read_csv(r)@st.cache_datadef nube(f, cual, pal):    d = base[base[F] == f]    c = TX if cual == "Antes" else "texto_limpio"    t = " ".join(d[c].fillna("").astype(str))    wc = WordCloud(width=700, height=420, background_color=FONDO, colormap=pal, max_words=70,                   collocations=False, stopwords=(DOMINIO | NEG) if cual == "Después" else set())    return wc.generate(t or "vacio").to_array()def sec(t, donde=st):    donde.markdown(f"<div class='sec'>{t}</div>", unsafe_allow_html=True)def pendiente(titulo, texto, alto=36):    st.markdown(f"<div class='pend' style='height:{alto}vh'><b>{titulo}</b>{texto}</div>",                unsafe_allow_html=True)def caja(titulo, texto, alto=31):    st.markdown(f"<div class='caja' style='height:{alto}vh'><b>{titulo}</b><br>{texto}</div>",                unsafe_allow_html=True)def lista(items):    return "<br>".join(f"• {t}" for t in items) or "—"def mostrar(fig):    st.pyplot(fig, use_container_width=True)    plt.close(fig)def barras(ax, v, fmt, xlabel, xmax=None):    for i, (f, x) in enumerate(v.items()):        ax.barh(i, x, color=col.get(f, GRIS), hatch=tra.get(f, "oo"), edgecolor=FONDO)        ax.text(x, i, " " + fmt(x), va="center")    ax.set_yticks(range(len(v)), [u.nombre(f) for f in v.index])    ax.invert_yaxis()    ax.set_xlim(0, xmax or v.max() * 1.5)    ax.set_xlabel(xlabel)def mapa_calor(p, tam=(6, 3.9)):    v = p.values    tope = min(v.max(), 60)    mx = v.argmax(axis=0)    fig, ax = plt.subplots(figsize=tam)    ax.imshow(v, cmap=pal, aspect="auto", vmin=0, vmax=tope)    for j in range(v.shape[1]):        for i in range(v.shape[0]):            ax.text(j, i, f"{v[i, j]:.0f}%", ha="center", va="center", fontsize=7,                    color="black" if v[i, j] > tope * 0.6 else "white",                    fontweight="bold" if i == mx[j] else "normal")    ax.set_xticks(range(p.shape[1]), [u.nombre(c).replace(" balanceado", "\nbalanceado") for c in p.columns])    ax.xaxis.tick_top()    ax.set_yticks(range(len(p)), p.index, fontsize=7)    ax.tick_params(length=0)    for s in ax.spines.values():        s.set_visible(False)    plt.tight_layout()    return figcfg = json.load(open(f"{SAL}/config.json", encoding="utf-8"))F, TX, DMO = cfg["fuente"], cfg["texto"], cfg["dmo"]base = leer("base_limpia.csv")orden = u.orden(base, F, DMO)if "fecha" in base:    fe = base.assign(a=pd.to_datetime(base["fecha"], errors="coerce").dt.year).dropna(subset=["a"])    con = fe.groupby(F)["a"].agg(["min", "max"])    periodo = "; ".join(f"{u.nombre(f)} {int(r['min'])}–{int(r['max'])}" for f, r in con.iterrows())    sin = [u.nombre(f) for f in orden if f not in con.index]    periodo += f" ({', '.join(sin)} sin fecha)" if sin else ""else:    periodo = "sin fechas"# ---------- Encabezado ----------c1, c2, c3, c4 = st.columns([2, 2, 2, 0.8])with c1:    pag = st.radio("Página", ["Panorama general", f"{u.nombre(DMO)} vs. visitantes"],                   horizontal=True, label_visibility="collapsed")    titulo = cfg["titulo"] if pag == "Panorama general" else f"{u.nombre(DMO)} vs. visitantes: ¿coincide la imagen?"    st.markdown(f"<h1>{titulo}</h1>", unsafe_allow_html=True)with c2:    st.markdown(f"<div class='sub'>Fecha del análisis: {cfg.get('fecha', '—')}<br>"                f"Periodo de las opiniones: {periodo}</div>", unsafe_allow_html=True)with c3:    sel = st.multiselect("Fuentes", orden, default=orden, format_func=u.nombre, label_visibility="collapsed")with c4:    pal = st.selectbox("Paleta", PALETAS, index=PALETAS.index(cfg["paleta"]), label_visibility="collapsed",                       help="Paleta de colores (todas aptas para daltonismo)")fuentes = [f for f in orden if f in sel] or ordenvis = [f for f in fuentes if f != DMO]col = u.colores(orden, pal) | {"visitantes": "#8B8F98", "visitantes balanceado": "#C4C7CC"}tra = u.tramas(orden) | {"visitantes": "oo", "visitantes balanceado": "++"}c_pos, c_neg = plt.get_cmap(pal)(0.75), plt.get_cmap(pal)(0.15)d = base[base[F].isin(fuentes)]at = leer("atipicos/1_resumen.csv", True)sent = leer("sentimiento/2_fuentes.csv", True)# ---------- Página 1 ----------if pag == "Panorama general":    n = d[F].value_counts().reindex(fuentes)    k = st.columns(2 + len(vis))    k[0].metric("Textos analizados", f"{len(d):,}")    k[1].metric("Contenido oficial de la DMO",                f"{n.get(DMO, 0) / n.sum() * 100:.1f}%" if DMO in fuentes else "—")    for j, f in enumerate(vis, 2):        k[j].metric(u.nombre(f), f"{n[f] / n.sum() * 100:.1f}%")    a, b, c = st.columns([1, 1, 2])    with a:        sec("¿Cuántos textos hay por fuente?")        fig, ax = plt.subplots(figsize=(4, 3.4))        barras(ax, n, lambda x: f"{int(x):,} ({x / n.sum() * 100:.1f}%)", "Número de textos")        plt.tight_layout()        mostrar(fig)    with b:        sec("Extensión de los textos")        pl = d["texto_base"].astype(str).str.split().str.len()        fig, ax = plt.subplots(figsize=(4, 3.4))        cj = ax.boxplot([pl[d[F] == f] for f in fuentes], orientation="horizontal", patch_artist=True,                        showfliers=False, widths=0.6, medianprops={"color": TEXTO},                        whiskerprops={"color": GRIS}, capprops={"color": GRIS})        for bx, f in zip(cj["boxes"], fuentes):            bx.set(facecolor=col[f], hatch=tra[f], edgecolor=FONDO)        ax.set_yticks(range(1, len(fuentes) + 1), [u.nombre(f) for f in fuentes])        ax.invert_yaxis()        ax.set_xlabel("Palabras por texto")        plt.tight_layout()        mostrar(fig)    with c:        h1, h2 = st.columns([1.2, 1])        sec("Temas más mencionados en cada fuente", h1)        tipo = h2.radio("Tipo", ["Palabras", "Bigramas", "Trigramas"], horizontal=True, label_visibility="collapsed")        ng = leer("exploracion/ngramas.csv")        ng = ng[ng["n"] == {"Palabras": 1, "Bigramas": 2, "Trigramas": 3}[tipo]]        fig, axs = plt.subplots(1, len(fuentes), figsize=(8.4, 3.5), squeeze=False)        for ax, f in zip(axs[0], fuentes):            x = ng[ng[F] == f].head(10)            ax.barh(x["ngrama"][::-1], x["porcentaje"][::-1], color=col[f], hatch=tra[f], edgecolor=FONDO)            ax.set_title(u.nombre(f))            ax.set_xlabel("% de textos que lo mencionan")        plt.tight_layout()        mostrar(fig)    a, b, c = st.columns(3)    with a:        h1, h2 = st.columns([1, 1])        sec("Nubes de palabras", h1)        cual = h2.radio("Limpieza", ["Antes", "Después"], index=1, horizontal=True, label_visibility="collapsed")        f_n = st.selectbox("Fuente", fuentes, format_func=u.nombre, key="nube", label_visibility="collapsed")        st.image(nube(f_n, cual, pal), use_container_width=True)    with b:        h1, h2 = st.columns([1, 1.3])        sec("Publicaciones poco comunes", h1)        vista = h2.radio("Ver", ["2 palabras", "3 palabras", "Textos"], horizontal=True, label_visibility="collapsed")        if vista == "Textos":            f_a = st.selectbox("Fuente", fuentes, format_func=u.nombre, key="atip", label_visibility="collapsed")            m = leer("atipicos/4_muestra.csv")            txt = m[m[F] == f_a]            r = at.loc[f_a]            if "rareza" in txt:                txt = txt.sort_values("rareza", ascending=False)                items = [f"<b>{x.rareza:.2f}</b> · {str(x.texto_base)[:200]}" for x in txt.itertuples()]                tit = " · del más raro al menos raro"            else:                items, tit = txt["texto_base"].astype(str).str.slice(0, 200).tolist(), ""            caja(f"{int(r['atipico'])} atípicos de {int(r['total']):,} ({r['atipico'] / r['total'] * 100:.1f}%){tit}",                 lista(items), 29)        else:            p = at.loc[fuentes, "atipico"] / at.loc[fuentes, "total"] * 100            fr = leer("atipicos/2_ngramas.csv")            fr = fr[fr["n"] == int(vista[0])].head(8)            fig, axs = plt.subplots(2, 1, figsize=(4, 3.4), gridspec_kw={"height_ratios": [1, 1.6]})            barras(axs[0], p, lambda x: f"{x:.1f}%", "% de los textos de la fuente")            if len(fr):                axs[1].barh(fr["frase"][::-1], fr["menciones"][::-1], color=GRIS)                axs[1].set_xlabel("Veces que aparece la frase")            else:                axs[1].axis("off")                axs[1].text(0.5, 0.5, "Sin frases repetidas", ha="center", color=GRIS)            plt.tight_layout()            mostrar(fig)    with c:        sec("Atípicos")        f_m = st.selectbox("Fuente", fuentes, format_func=u.nombre, key="mapa", label_visibility="collapsed")        mp = leer("atipicos/3_mapa.csv")        if mp is None:            pendiente("Falta el mapa", "Corre main.py otra vez", 36)        else:            x = mp[mp[F] == f_m]            nor, atp = x[~x["atipico"]], x[x["atipico"]]            fig, ax = plt.subplots(figsize=(4, 3.2))            ax.scatter(nor["x"], nor["y"], s=4, color=GRIS, alpha=0.4, label=f"Normal ({len(nor):,})")            ax.scatter(atp["x"], atp["y"], s=45, marker="X", color=plt.get_cmap(pal)(0.9),                       edgecolors=FONDO, linewidths=0.6, label=f"Atípico ({len(atp)})")            ax.set_xticks([])            ax.set_yticks([])            for s in ax.spines.values():                s.set_visible(False)            ax.legend(frameon=False, ncol=2, loc="lower center", bbox_to_anchor=(0.5, 1.0))            plt.tight_layout()            mostrar(fig)# ---------- Página 2 ----------else:    al = leer("comparacion/1_alineacion.csv").set_index("fuente")["alineacion"]    br = leer("comparacion/2_brechas_positivos.csv", True)    ip, ineg = leer("imagen/1_temas_positivos.csv", True), leer("imagen/2_temas_negativos.csv", True)    pr = leer("precio/1_frecuencia_tono.csv").set_index("fuente")    ctx = leer("precio/3_contexto_temas.csv", True)    tm = leer("temas/3_temas.csv")    op = leer("oportunidades/oportunidades.csv")    g = "visitantes" if "visitantes" in ip else orden[1]    k = st.columns(2)    k[0].metric(f"Tema principal de {u.nombre(DMO)}", ip[DMO].idxmax() if DMO in ip else "—")    k[1].metric("Tema principal de visitantes", ip[g].idxmax())    a, b = st.columns(2)    with a:        h1, h2, h3 = st.columns([1.3, 1, 1])        sec(f"Temas: {u.nombre(DMO)} vs. visitantes", h1)        gr = h2.radio("Grupo", ["Positivos", "Negativos"], horizontal=True, label_visibility="collapsed")        vt = h3.radio("Vista", ["Barras", "Mapa de calor"], horizontal=True, label_visibility="collapsed")        p = ip if gr == "Positivos" else ineg        if vt == "Mapa de calor":            mostrar(mapa_calor(p, (7, 4.8)))        else:            p = p[[f for f in fuentes if f in p]]            p = p.loc[p.max(axis=1).sort_values().index]            fig, ax = plt.subplots(figsize=(7, 4.8))            alto = 0.8 / max(len(p.columns), 1)            for j, f in enumerate(p.columns):                ax.barh([y + (len(p.columns) / 2 - j - 0.5) * alto for y in range(len(p))], p[f], alto,                        color=col[f], hatch=tra[f], edgecolor=FONDO, label=u.nombre(f))            ax.set_yticks(range(len(p)), p.index)            ax.set_xlabel("% de los textos de cada fuente")            ax.legend(frameon=False, ncol=4, loc="lower center", bbox_to_anchor=(0.5, 1.0))            plt.tight_layout()            mostrar(fig)    with b:        h1, h2 = st.columns([1.3, 1])        sec("Diferencias clave", h1)        vd = h2.radio("Dif", ["Brechas", "Alineación"], horizontal=True, label_visibility="collapsed")        if vd == "Alineación":            v = al[[f for f in al.index if f in fuentes or f.startswith("visitantes")]]            fig, ax = plt.subplots(figsize=(7, 4.8))            barras(ax, v, lambda x: f"{x:.2f}", f"Similitud con {u.nombre(DMO)} (1 = mismo significado)", 1.1)            plt.tight_layout()            mostrar(fig)        elif br is not None:            fig, ax = plt.subplots(figsize=(7, 4.8))            y = range(len(br))            ax.hlines(y, br["pct_dmo"], br["pct_visitantes"], color=GRIS, lw=3, zorder=1)            ax.scatter(br["pct_dmo"], y, s=110, marker="s", color=col[DMO], zorder=2, label=u.nombre(DMO))            ax.scatter(br["pct_visitantes"], y, s=90, marker="o", color="#C4C7CC", edgecolors=FONDO,                       zorder=2, label="Visitantes")            for j, r in enumerate(br.itertuples()):                ax.text(max(r.pct_dmo, r.pct_visitantes) + 0.8, j, f"{r.diferencia:+.1f} pp", va="center")            ax.set_yticks(list(y), br.index)            ax.set_xlim(right=br[["pct_dmo", "pct_visitantes"]].max().max() * 1.2)            ax.set_xlabel("% de textos positivos del grupo")            ax.legend(frameon=False, ncol=2, loc="upper center", bbox_to_anchor=(0.5, -0.12))            plt.tight_layout()            mostrar(fig)        else:            pendiente("Sin brechas", f"{u.nombre(DMO)} tiene pocos textos para comparar", 40)    a, b, c, e = st.columns([1.1, 1, 1.1, 1])    with a:        sec("Tono de las opiniones")        p = sent.reindex(fuentes)        fig, ax = plt.subplots(figsize=(4, 3.6))        y = range(len(p))        ax.barh(y, p["positivo"], color=c_pos, edgecolor=FONDO, label="Positivo")        ax.barh(y, p["negativo"], left=p["positivo"], color=c_neg, hatch="//", edgecolor=FONDO, label="Negativo")        for j, f in enumerate(p.index):            ax.text(p.loc[f, "positivo"] / 2, j, f"{p.loc[f, 'positivo']:.0f}%", ha="center", va="center", color=FONDO)            if p.loc[f, "negativo"] >= 8:                ax.text(p.loc[f, "positivo"] + p.loc[f, "negativo"] / 2, j, f"{p.loc[f, 'negativo']:.0f}%",                        ha="center", va="center", color=TEXTO)        ax.set_yticks(list(y), [u.nombre(f) for f in p.index])        ax.invert_yaxis()        ax.set_xlim(0, 100)        ax.set_xlabel("% de textos")        ax.legend(frameon=False, ncol=2, loc="lower center", bbox_to_anchor=(0.5, 1.0))        plt.tight_layout()        mostrar(fig)    with b:        sec("Opiniones representativas")        et = (tm["grupo"].str[:-1].str.capitalize() + ": " + tm["nombre"]).tolist()        tema = st.selectbox("Tema", et, label_visibility="collapsed")        r = tm.iloc[et.index(tema)]        caja(f"Palabras clave: {', '.join(r['palabras_clave'].split(', ')[:6])}",             "<br><br>".join(f"«{str(r[c_])[:200]}»" for c_ in ["comentario_1", "comentario_2"] if pd.notna(r.get(c_))), 27)    with c:        h1, h2 = st.columns([1, 1.3])        sec("Precio, valor y costo", h1)        vp = h2.radio("Precio", ["Frecuencia y tono", "Temas"], horizontal=True, label_visibility="collapsed")        if vp == "Temas" and ctx is not None:            mostrar(mapa_calor(ctx))        else:            x = pr.loc[[f for f in pr.index if f in fuentes or f.startswith("visitantes")]]            fig, axs = plt.subplots(2, 1, figsize=(4, 3.6), sharey=True)            barras(axs[0], x["pct_precio"], lambda v: f"{v:.1f}%", "")            axs[0].set_title("% de textos que hablan de precio")            y = range(len(x))            axs[1].barh([j - 0.2 for j in y], x["pct_negativo_precio"].fillna(0), 0.4, color=c_neg,                        hatch="//", edgecolor=FONDO, label="Al hablar de precio")            axs[1].barh([j + 0.2 for j in y], x["pct_negativo_general"], 0.4, color=GRIS, label="En general")            axs[1].set_title("% negativo")            axs[1].set_xlim(0, 100)            axs[1].legend(frameon=False, fontsize=6, loc="lower right")            plt.tight_layout()            mostrar(fig)    with e:        sec("Áreas de oportunidad")        html = "".join(f"<b>{r.tipo}</b><br>{r.hallazgo}<br><i>→ {r.sugerencia}</i><br><br>" for r in op.itertuples())        caja("Lo que sugieren los datos", html, 33)
+import os
+import sys
+import json
+import pandas as pd
+import matplotlib.pyplot as plt
+import streamlit as st
+from wordcloud import WordCloud
+from analisis import utilidades as u
+from analisis.exploracion import NEG, DOMINIO
+
+SAL = sys.argv[1] if len(sys.argv) > 1 else "salidas"
+FONDO, TEXTO, GRIS = "#0E1117", "#FAFAFA", "#8B8F98"
+PALETAS = ["viridis", "cividis", "plasma", "inferno"]
+
+st.set_page_config(page_title="Imagen turística", layout="wide")
+plt.rcParams.update({
+    "figure.facecolor": FONDO, "axes.facecolor": FONDO, "savefig.facecolor": FONDO,
+    "text.color": TEXTO, "axes.labelcolor": GRIS, "xtick.color": GRIS,
+    "ytick.color": TEXTO, "axes.edgecolor": GRIS, "font.size": 8,
+    "axes.titlesize": 9, "axes.spines.top": False, "axes.spines.right": False,
+    "hatch.color": FONDO,
+})
+st.markdown("""
+<style>
+.block-container {padding: 0.6rem 1.2rem 0 1.2rem; max-width: 100%;}
+header, footer {visibility: hidden; height: 0;}
+h1 {font-size: 1.15rem !important; line-height: 1.6 !important; margin: 0 !important; padding: 0 !important;}
+.sub {color: #8B8F98; font-size: 0.78rem; line-height: 1.5;}
+.sec {font-size: 0.85rem; font-weight: 600; line-height: 1.6; margin: 0;}
+.pend {border: 1px dashed #4A4E57; border-radius: 8px; padding: 0.8rem; margin-top: 0.4rem;
+       color: #8B8F98; font-size: 0.8rem; display: flex; flex-direction: column;
+       justify-content: center; align-items: center; text-align: center;}
+.pend b {color: #FAFAFA; font-size: 0.9rem; margin-bottom: 0.3rem;}
+.caja {background: #1A1D24; border-radius: 8px; padding: 0.7rem 0.9rem; margin-top: 0.4rem;
+       color: #D0D3D9; font-size: 0.78rem; line-height: 1.45; overflow-y: auto;}
+.caja b {color: #FAFAFA;}
+[data-testid="stMetric"] {background: #1A1D24; border-radius: 8px; padding: 0.2rem 0.8rem;}
+[data-testid="stMetricLabel"] p {font-size: 0.78rem;}
+[data-testid="stMetricValue"] {font-size: 1.15rem;}
+[data-testid="stVerticalBlock"] {gap: 0.35rem;}
+[data-testid="stMarkdown"], [data-testid="stMarkdownContainer"],
+[data-testid="stMarkdownContainer"] > * {margin-bottom: 0 !important;}
+.sec, h1 {display: block; padding-bottom: 0.25rem !important; overflow: visible;}
+[data-testid="stImage"] img, .stImage img {max-height: 48vh; object-fit: contain;}
+</style>
+""", unsafe_allow_html=True)
+
+
+@st.cache_data
+def leer(ruta, indice=False):
+    r = f"{SAL}/{ruta}"
+    if not os.path.exists(r):
+        return None
+    return pd.read_csv(r, index_col=0) if indice else pd.read_csv(r)
+
+
+@st.cache_data
+def nube(f, cual, pal):
+    d = base[base[F] == f]
+    c = TX if cual == "Antes" else "texto_limpio"
+    t = " ".join(d[c].fillna("").astype(str))
+    wc = WordCloud(width=700, height=420, background_color=FONDO, colormap=pal, max_words=70,
+                   collocations=False, stopwords=(DOMINIO | NEG) if cual == "Después" else set())
+    return wc.generate(t or "vacio").to_array()
+
+
+def sec(t, donde=st):
+    donde.markdown(f"<div class='sec'>{t}</div>", unsafe_allow_html=True)
+
+
+def pendiente(titulo, texto, alto=36):
+    st.markdown(f"<div class='pend' style='height:{alto}vh'><b>{titulo}</b>{texto}</div>",
+                unsafe_allow_html=True)
+
+
+def caja(titulo, texto, alto=31):
+    st.markdown(f"<div class='caja' style='height:{alto}vh'><b>{titulo}</b><br>{texto}</div>",
+                unsafe_allow_html=True)
+
+
+def lista(items):
+    return "<br>".join(f"• {t}" for t in items) or "—"
+
+
+def mostrar(fig):
+    st.pyplot(fig, use_container_width=True)
+    plt.close(fig)
+
+
+def barras(ax, v, fmt, xlabel, xmax=None):
+    for i, (f, x) in enumerate(v.items()):
+        ax.barh(i, x, color=col.get(f, GRIS), hatch=tra.get(f, "oo"), edgecolor=FONDO)
+        ax.text(x, i, " " + fmt(x), va="center")
+    ax.set_yticks(range(len(v)), [u.nombre(f) for f in v.index])
+    ax.invert_yaxis()
+    ax.set_xlim(0, xmax or v.max() * 1.5)
+    ax.set_xlabel(xlabel)
+
+
+def mapa_calor(p, tam=(6, 3.9)):
+    v = p.values
+    tope = min(v.max(), 60)
+    mx = v.argmax(axis=0)
+    fig, ax = plt.subplots(figsize=tam)
+    ax.imshow(v, cmap=pal, aspect="auto", vmin=0, vmax=tope)
+    for j in range(v.shape[1]):
+        for i in range(v.shape[0]):
+            ax.text(j, i, f"{v[i, j]:.0f}%", ha="center", va="center", fontsize=7,
+                    color="black" if v[i, j] > tope * 0.6 else "white",
+                    fontweight="bold" if i == mx[j] else "normal")
+    ax.set_xticks(range(p.shape[1]), [u.nombre(c).replace(" balanceado", "\nbalanceado") for c in p.columns])
+    ax.xaxis.tick_top()
+    ax.set_yticks(range(len(p)), p.index, fontsize=7)
+    ax.tick_params(length=0)
+    for s in ax.spines.values():
+        s.set_visible(False)
+    plt.tight_layout()
+    return fig
+
+
+cfg = json.load(open(f"{SAL}/config.json", encoding="utf-8"))
+F, TX, DMO = cfg["fuente"], cfg["texto"], cfg["dmo"]
+base = leer("base_limpia.csv")
+orden = u.orden(base, F, DMO)
+
+if "fecha" in base:
+    fe = base.assign(a=pd.to_datetime(base["fecha"], errors="coerce").dt.year).dropna(subset=["a"])
+    con = fe.groupby(F)["a"].agg(["min", "max"])
+    periodo = "; ".join(f"{u.nombre(f)} {int(r['min'])}–{int(r['max'])}" for f, r in con.iterrows())
+    sin = [u.nombre(f) for f in orden if f not in con.index]
+    periodo += f" ({', '.join(sin)} sin fecha)" if sin else ""
+else:
+    periodo = "sin fechas"
+
+# ---------- Encabezado ----------
+c1, c2, c3, c4 = st.columns([2, 2, 2, 0.8])
+with c1:
+    pag = st.radio("Página", ["Panorama general", f"{u.nombre(DMO)} vs. visitantes"],
+                   horizontal=True, label_visibility="collapsed")
+    titulo = cfg["titulo"] if pag == "Panorama general" else f"{u.nombre(DMO)} vs. visitantes: ¿coincide la imagen?"
+    st.markdown(f"<h1>{titulo}</h1>", unsafe_allow_html=True)
+with c2:
+    st.markdown(f"<div class='sub'>Fecha del análisis: {cfg.get('fecha', '—')}<br>"
+                f"Periodo de las opiniones: {periodo}</div>", unsafe_allow_html=True)
+with c3:
+    sel = st.multiselect("Fuentes", orden, default=orden, format_func=u.nombre, label_visibility="collapsed")
+with c4:
+    pal = st.selectbox("Paleta", PALETAS, index=PALETAS.index(cfg["paleta"]), label_visibility="collapsed",
+                       help="Paleta de colores (todas aptas para daltonismo)")
+
+fuentes = [f for f in orden if f in sel] or orden
+vis = [f for f in fuentes if f != DMO]
+col = u.colores(orden, pal) | {"visitantes": "#8B8F98", "visitantes balanceado": "#C4C7CC"}
+tra = u.tramas(orden) | {"visitantes": "oo", "visitantes balanceado": "++"}
+c_pos, c_neg = plt.get_cmap(pal)(0.75), plt.get_cmap(pal)(0.15)
+d = base[base[F].isin(fuentes)]
+at = leer("atipicos/1_resumen.csv", True)
+sent = leer("sentimiento/2_fuentes.csv", True)
+
+# ---------- Página 1 ----------
+if pag == "Panorama general":
+    n = d[F].value_counts().reindex(fuentes)
+    k = st.columns(2 + len(vis))
+    k[0].metric("Textos analizados", f"{len(d):,}")
+    k[1].metric("Contenido oficial de la DMO",
+                f"{n.get(DMO, 0) / n.sum() * 100:.1f}%" if DMO in fuentes else "—")
+    for j, f in enumerate(vis, 2):
+        k[j].metric(u.nombre(f), f"{n[f] / n.sum() * 100:.1f}%")
+
+    a, b, c = st.columns([1, 1, 2])
+    with a:
+        sec("¿Cuántos textos hay por fuente?")
+        fig, ax = plt.subplots(figsize=(4, 3.4))
+        barras(ax, n, lambda x: f"{int(x):,} ({x / n.sum() * 100:.1f}%)", "Número de textos")
+        plt.tight_layout()
+        mostrar(fig)
+    with b:
+        sec("Extensión de los textos")
+        pl = d["texto_base"].astype(str).str.split().str.len()
+        fig, ax = plt.subplots(figsize=(4, 3.4))
+        cj = ax.boxplot([pl[d[F] == f] for f in fuentes], orientation="horizontal", patch_artist=True,
+                        showfliers=False, widths=0.6, medianprops={"color": TEXTO},
+                        whiskerprops={"color": GRIS}, capprops={"color": GRIS})
+        for bx, f in zip(cj["boxes"], fuentes):
+            bx.set(facecolor=col[f], hatch=tra[f], edgecolor=FONDO)
+        ax.set_yticks(range(1, len(fuentes) + 1), [u.nombre(f) for f in fuentes])
+        ax.invert_yaxis()
+        ax.set_xlabel("Palabras por texto")
+        plt.tight_layout()
+        mostrar(fig)
+    with c:
+        h1, h2 = st.columns([1.2, 1])
+        sec("Temas más mencionados en cada fuente", h1)
+        tipo = h2.radio("Tipo", ["Palabras", "Bigramas", "Trigramas"], horizontal=True, label_visibility="collapsed")
+        ng = leer("exploracion/ngramas.csv")
+        ng = ng[ng["n"] == {"Palabras": 1, "Bigramas": 2, "Trigramas": 3}[tipo]]
+        fig, axs = plt.subplots(1, len(fuentes), figsize=(8.4, 3.5), squeeze=False)
+        for ax, f in zip(axs[0], fuentes):
+            x = ng[ng[F] == f].head(10)
+            ax.barh(x["ngrama"][::-1], x["porcentaje"][::-1], color=col[f], hatch=tra[f], edgecolor=FONDO)
+            ax.set_title(u.nombre(f))
+            ax.set_xlabel("% de textos que lo mencionan")
+        plt.tight_layout()
+        mostrar(fig)
+
+    a, b, c = st.columns(3)
+    with a:
+        h1, h2 = st.columns([1, 1])
+        sec("Nubes de palabras", h1)
+        cual = h2.radio("Limpieza", ["Antes", "Después"], index=1, horizontal=True, label_visibility="collapsed")
+        f_n = st.selectbox("Fuente", fuentes, format_func=u.nombre, key="nube", label_visibility="collapsed")
+        st.image(nube(f_n, cual, pal), use_container_width=True)
+    with b:
+        h1, h2 = st.columns([1, 1.3])
+        sec("Publicaciones poco comunes", h1)
+        vista = h2.radio("Ver", ["2 palabras", "3 palabras", "Textos"], horizontal=True, label_visibility="collapsed")
+        if vista == "Textos":
+            f_a = st.selectbox("Fuente", fuentes, format_func=u.nombre, key="atip", label_visibility="collapsed")
+            m = leer("atipicos/4_muestra.csv")
+            txt = m[m[F] == f_a]
+            r = at.loc[f_a]
+            if "rareza" in txt:
+                txt = txt.sort_values("rareza", ascending=False)
+                items = [f"<b>{x.rareza:.2f}</b> · {str(x.texto_base)[:200]}" for x in txt.itertuples()]
+                tit = " · del más raro al menos raro"
+            else:
+                items, tit = txt["texto_base"].astype(str).str.slice(0, 200).tolist(), ""
+            caja(f"{int(r['atipico'])} atípicos de {int(r['total']):,} ({r['atipico'] / r['total'] * 100:.1f}%){tit}",
+                 lista(items), 29)
+        else:
+            p = at.loc[fuentes, "atipico"] / at.loc[fuentes, "total"] * 100
+            fr = leer("atipicos/2_ngramas.csv")
+            fr = fr[fr["n"] == int(vista[0])].head(8)
+            fig, axs = plt.subplots(2, 1, figsize=(4, 3.4), gridspec_kw={"height_ratios": [1, 1.6]})
+            barras(axs[0], p, lambda x: f"{x:.1f}%", "% de los textos de la fuente")
+            if len(fr):
+                axs[1].barh(fr["frase"][::-1], fr["menciones"][::-1], color=GRIS)
+                axs[1].set_xlabel("Veces que aparece la frase")
+            else:
+                axs[1].axis("off")
+                axs[1].text(0.5, 0.5, "Sin frases repetidas", ha="center", color=GRIS)
+            plt.tight_layout()
+            mostrar(fig)
+    with c:
+        sec("Atípicos")
+        f_m = st.selectbox("Fuente", fuentes, format_func=u.nombre, key="mapa", label_visibility="collapsed")
+        mp = leer("atipicos/3_mapa.csv")
+        if mp is None:
+            pendiente("Falta el mapa", "Corre main.py otra vez", 36)
+        else:
+            x = mp[mp[F] == f_m]
+            nor, atp = x[~x["atipico"]], x[x["atipico"]]
+            fig, ax = plt.subplots(figsize=(4, 3.2))
+            ax.scatter(nor["x"], nor["y"], s=4, color=GRIS, alpha=0.4, label=f"Normal ({len(nor):,})")
+            ax.scatter(atp["x"], atp["y"], s=45, marker="X", color=plt.get_cmap(pal)(0.9),
+                       edgecolors=FONDO, linewidths=0.6, label=f"Atípico ({len(atp)})")
+            ax.set_xticks([])
+            ax.set_yticks([])
+            for s in ax.spines.values():
+                s.set_visible(False)
+            ax.legend(frameon=False, ncol=2, loc="lower center", bbox_to_anchor=(0.5, 1.0))
+            plt.tight_layout()
+            mostrar(fig)
+
+# ---------- Página 2 ----------
+else:
+    al = leer("comparacion/1_alineacion.csv").set_index("fuente")["alineacion"]
+    br = leer("comparacion/2_brechas_positivos.csv", True)
+    ip, ineg = leer("imagen/1_temas_positivos.csv", True), leer("imagen/2_temas_negativos.csv", True)
+    pr = leer("precio/1_frecuencia_tono.csv").set_index("fuente")
+    ctx = leer("precio/3_contexto_temas.csv", True)
+    tm = leer("temas/3_temas.csv")
+    op = leer("oportunidades/oportunidades.csv")
+    g = "visitantes" if "visitantes" in ip else orden[1]
+
+    k = st.columns(2)
+    k[0].metric(f"Tema principal de {u.nombre(DMO)}", ip[DMO].idxmax() if DMO in ip else "—")
+    k[1].metric("Tema principal de visitantes", ip[g].idxmax())
+
+    a, b = st.columns(2)
+    with a:
+        h1, h2, h3 = st.columns([1.3, 1, 1])
+        sec(f"Temas: {u.nombre(DMO)} vs. visitantes", h1)
+        gr = h2.radio("Grupo", ["Positivos", "Negativos"], horizontal=True, label_visibility="collapsed")
+        vt = h3.radio("Vista", ["Barras", "Mapa de calor"], horizontal=True, label_visibility="collapsed")
+        p = ip if gr == "Positivos" else ineg
+        if vt == "Mapa de calor":
+            mostrar(mapa_calor(p, (7, 4.8)))
+        else:
+            p = p[[f for f in fuentes if f in p]]
+            p = p.loc[p.max(axis=1).sort_values().index]
+            fig, ax = plt.subplots(figsize=(7, 4.8))
+            alto = 0.8 / max(len(p.columns), 1)
+            for j, f in enumerate(p.columns):
+                ax.barh([y + (len(p.columns) / 2 - j - 0.5) * alto for y in range(len(p))], p[f], alto,
+                        color=col[f], hatch=tra[f], edgecolor=FONDO, label=u.nombre(f))
+            ax.set_yticks(range(len(p)), p.index)
+            ax.set_xlabel("% de los textos de cada fuente")
+            ax.legend(frameon=False, ncol=4, loc="lower center", bbox_to_anchor=(0.5, 1.0))
+            plt.tight_layout()
+            mostrar(fig)
+    with b:
+        h1, h2 = st.columns([1.3, 1])
+        sec("Diferencias clave", h1)
+        vd = h2.radio("Dif", ["Brechas", "Alineación"], horizontal=True, label_visibility="collapsed")
+        if vd == "Alineación":
+            v = al[[f for f in al.index if f in fuentes or f.startswith("visitantes")]]
+            fig, ax = plt.subplots(figsize=(7, 4.8))
+            barras(ax, v, lambda x: f"{x:.2f}", f"Similitud con {u.nombre(DMO)} (1 = mismo significado)", 1.1)
+            plt.tight_layout()
+            mostrar(fig)
+        elif br is not None:
+            fig, ax = plt.subplots(figsize=(7, 4.8))
+            y = range(len(br))
+            ax.hlines(y, br["pct_dmo"], br["pct_visitantes"], color=GRIS, lw=3, zorder=1)
+            ax.scatter(br["pct_dmo"], y, s=110, marker="s", color=col[DMO], zorder=2, label=u.nombre(DMO))
+            ax.scatter(br["pct_visitantes"], y, s=90, marker="o", color="#C4C7CC", edgecolors=FONDO,
+                       zorder=2, label="Visitantes")
+            for j, r in enumerate(br.itertuples()):
+                ax.text(max(r.pct_dmo, r.pct_visitantes) + 0.8, j, f"{r.diferencia:+.1f} pp", va="center")
+            ax.set_yticks(list(y), br.index)
+            ax.set_xlim(right=br[["pct_dmo", "pct_visitantes"]].max().max() * 1.2)
+            ax.set_xlabel("% de textos positivos del grupo")
+            ax.legend(frameon=False, ncol=2, loc="upper center", bbox_to_anchor=(0.5, -0.12))
+            plt.tight_layout()
+            mostrar(fig)
+        else:
+            pendiente("Sin brechas", f"{u.nombre(DMO)} tiene pocos textos para comparar", 40)
+
+    a, b, c, e = st.columns([1.1, 1, 1.1, 1])
+    with a:
+        sec("Tono de las opiniones")
+        p = sent.reindex(fuentes)
+        fig, ax = plt.subplots(figsize=(4, 3.6))
+        y = range(len(p))
+        ax.barh(y, p["positivo"], color=c_pos, edgecolor=FONDO, label="Positivo")
+        ax.barh(y, p["negativo"], left=p["positivo"], color=c_neg, hatch="//", edgecolor=FONDO, label="Negativo")
+        for j, f in enumerate(p.index):
+            ax.text(p.loc[f, "positivo"] / 2, j, f"{p.loc[f, 'positivo']:.0f}%", ha="center", va="center", color=FONDO)
+            if p.loc[f, "negativo"] >= 8:
+                ax.text(p.loc[f, "positivo"] + p.loc[f, "negativo"] / 2, j, f"{p.loc[f, 'negativo']:.0f}%",
+                        ha="center", va="center", color=TEXTO)
+        ax.set_yticks(list(y), [u.nombre(f) for f in p.index])
+        ax.invert_yaxis()
+        ax.set_xlim(0, 100)
+        ax.set_xlabel("% de textos")
+        ax.legend(frameon=False, ncol=2, loc="lower center", bbox_to_anchor=(0.5, 1.0))
+        plt.tight_layout()
+        mostrar(fig)
+    with b:
+        sec("Opiniones representativas")
+        et = (tm["grupo"].str[:-1].str.capitalize() + ": " + tm["nombre"]).tolist()
+        tema = st.selectbox("Tema", et, label_visibility="collapsed")
+        r = tm.iloc[et.index(tema)]
+        caja(f"Palabras clave: {', '.join(r['palabras_clave'].split(', ')[:6])}",
+             "<br><br>".join(f"«{str(r[c_])[:200]}»" for c_ in ["comentario_1", "comentario_2"] if pd.notna(r.get(c_))), 27)
+    with c:
+        h1, h2 = st.columns([1, 1.3])
+        sec("Precio, valor y costo", h1)
+        vp = h2.radio("Precio", ["Frecuencia y tono", "Temas"], horizontal=True, label_visibility="collapsed")
+        if vp == "Temas" and ctx is not None:
+            mostrar(mapa_calor(ctx))
+        else:
+            x = pr.loc[[f for f in pr.index if f in fuentes or f.startswith("visitantes")]]
+            fig, axs = plt.subplots(2, 1, figsize=(4, 3.6), sharey=True)
+            barras(axs[0], x["pct_precio"], lambda v: f"{v:.1f}%", "")
+            axs[0].set_title("% de textos que hablan de precio")
+            y = range(len(x))
+            axs[1].barh([j - 0.2 for j in y], x["pct_negativo_precio"].fillna(0), 0.4, color=c_neg,
+                        hatch="//", edgecolor=FONDO, label="Al hablar de precio")
+            axs[1].barh([j + 0.2 for j in y], x["pct_negativo_general"], 0.4, color=GRIS, label="En general")
+            axs[1].set_title("% negativo")
+            axs[1].set_xlim(0, 100)
+            axs[1].legend(frameon=False, fontsize=6, loc="lower right")
+            plt.tight_layout()
+            mostrar(fig)
+    with e:
+        sec("Áreas de oportunidad")
+        html = "".join(f"<b>{r.tipo}</b><br>{r.hallazgo}<br><i>→ {r.sugerencia}</i><br><br>" for r in op.itertuples())
+        caja("Lo que sugieren los datos", html, 33)

@@ -1,1 +1,62 @@
-import osimport pandas as pdimport matplotlib.pyplot as pltfrom analisis import utilidades as udef reparto(df, fuente, dmo, fuentes, g):    d = df[(df["sentimiento"] == g[:-1]) & (df["tema_" + g] >= 0)]    n = d[fuente].value_counts()    cols = [f for f in fuentes if n.get(f, 0) >= 30]    fuera = [f for f in fuentes if 0 < n.get(f, 0) < 30]    p = pd.crosstab(d["nombre_" + g], d[fuente], normalize="columns").reindex(columns=cols).fillna(0) * 100    plat = [f for f in cols if f != dmo]    if len(fuentes) > 2:        v = d[d[fuente] != dmo]        p["visitantes"] = v["nombre_" + g].value_counts(normalize=True).reindex(p.index).fillna(0) * 100        n["visitantes"] = len(v)        if len(plat) > 1:            p["visitantes balanceado"] = p[plat].mean(axis=1)            n["visitantes balanceado"] = len(v)    orden_col = "visitantes" if "visitantes" in p else p.columns[-1]    return p.sort_values(orden_col, ascending=False).round(1), n, fueradef graf_mapa(p, n, g, paleta, ruta):    v = p.values    tope = min(v.max(), 60)    mx = v.argmax(axis=0)    fig, ax = plt.subplots(figsize=(4 + 1.8 * p.shape[1], 0.6 * len(p) + 1.8))    ax.imshow(v, cmap=paleta, aspect="auto", vmin=0, vmax=tope)    for j in range(v.shape[1]):        for i in range(v.shape[0]):            ax.text(j, i, f"{v[i, j]:.0f}%", ha="center", va="center",                    color="black" if v[i, j] > tope * 0.6 else "white",                    fontweight="bold" if i == mx[j] else "normal")    if "visitantes" in p:        ax.axvline(list(p.columns).index("visitantes") - 0.5, color="white", lw=4)    ax.set_xticks(range(p.shape[1]), [f"{u.nombre(c)}\n(n={n[c]:,})" for c in p.columns])    ax.xaxis.tick_top()    ax.set_yticks(range(len(p)), p.index)    ax.set_title(f"Imagen por fuente y global: textos {g}", pad=40)    ax.tick_params(length=0)    for s in ax.spines.values():        s.set_visible(False)    u.guardar(fig, ruta)def imagen(df, fuente, dmo, paleta, salida):    out = f"{salida}/imagen"    os.makedirs(out, exist_ok=True)    fuentes = u.orden(df, fuente, dmo)    res = {}    for k, g in enumerate(["positivos", "negativos"], 1):        p, n, fuera = reparto(df, fuente, dmo, fuentes, g)        if p.empty:            continue        if fuera:            print(f"  Imagen {g}: no se muestra {', '.join(u.nombre(f) for f in fuera)} (menos de 30 textos)")        p.to_csv(f"{out}/{k}_temas_{g}.csv")        graf_mapa(p, n, g, paleta, f"{out}/{k}_temas_{g}.png")        res[g] = p    return res
+import os
+import pandas as pd
+import matplotlib.pyplot as plt
+from analisis import utilidades as u
+
+
+def reparto(df, fuente, dmo, fuentes, g):
+    d = df[(df["sentimiento"] == g[:-1]) & (df["tema_" + g] >= 0)]
+    n = d[fuente].value_counts()
+    cols = [f for f in fuentes if n.get(f, 0) >= 30]
+    fuera = [f for f in fuentes if 0 < n.get(f, 0) < 30]
+    p = pd.crosstab(d["nombre_" + g], d[fuente], normalize="columns").reindex(columns=cols).fillna(0) * 100
+    plat = [f for f in cols if f != dmo]
+    if len(fuentes) > 2:
+        v = d[d[fuente] != dmo]
+        p["visitantes"] = v["nombre_" + g].value_counts(normalize=True).reindex(p.index).fillna(0) * 100
+        n["visitantes"] = len(v)
+        if len(plat) > 1:
+            p["visitantes balanceado"] = p[plat].mean(axis=1)
+            n["visitantes balanceado"] = len(v)
+    orden_col = "visitantes" if "visitantes" in p else p.columns[-1]
+    return p.sort_values(orden_col, ascending=False).round(1), n, fuera
+
+
+def graf_mapa(p, n, g, paleta, ruta):
+    v = p.values
+    tope = min(v.max(), 60)
+    mx = v.argmax(axis=0)
+    fig, ax = plt.subplots(figsize=(4 + 1.8 * p.shape[1], 0.6 * len(p) + 1.8))
+    ax.imshow(v, cmap=paleta, aspect="auto", vmin=0, vmax=tope)
+    for j in range(v.shape[1]):
+        for i in range(v.shape[0]):
+            ax.text(j, i, f"{v[i, j]:.0f}%", ha="center", va="center",
+                    color="black" if v[i, j] > tope * 0.6 else "white",
+                    fontweight="bold" if i == mx[j] else "normal")
+    if "visitantes" in p:
+        ax.axvline(list(p.columns).index("visitantes") - 0.5, color="white", lw=4)
+    ax.set_xticks(range(p.shape[1]), [f"{u.nombre(c)}\n(n={n[c]:,})" for c in p.columns])
+    ax.xaxis.tick_top()
+    ax.set_yticks(range(len(p)), p.index)
+    ax.set_title(f"Imagen por fuente y global: textos {g}", pad=40)
+    ax.tick_params(length=0)
+    for s in ax.spines.values():
+        s.set_visible(False)
+    u.guardar(fig, ruta)
+
+
+def imagen(df, fuente, dmo, paleta, salida):
+    out = f"{salida}/imagen"
+    os.makedirs(out, exist_ok=True)
+    fuentes = u.orden(df, fuente, dmo)
+    res = {}
+    for k, g in enumerate(["positivos", "negativos"], 1):
+        p, n, fuera = reparto(df, fuente, dmo, fuentes, g)
+        if p.empty:
+            continue
+        if fuera:
+            print(f"  Imagen {g}: no se muestra {', '.join(u.nombre(f) for f in fuera)} (menos de 30 textos)")
+        p.to_csv(f"{out}/{k}_temas_{g}.csv")
+        graf_mapa(p, n, g, paleta, f"{out}/{k}_temas_{g}.png")
+        res[g] = p
+    return res
