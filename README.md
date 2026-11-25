@@ -134,8 +134,6 @@ Con una base distinta, los temas que no estén en el diccionario se nombran auto
 
 ## Autora
 
-Rosario Geraldine Vasquez Arguello  
-Ingeniería de Datos e Inteligencia Artificial, Universidad de Guanajuato  
-Visualización de la Información
+Rosario Geraldine Vasquez Arguello, estudiante de Ingeniería de Datos e Inteligencia Artificial en la Universidad de Guanajuato.
 
-Contacto: [geralarguello17@gmail.com](mailto:geralarguello17@gmail.com)
+Para dudas o comentarios: [geralarguello17@gmail.com](mailto:geralarguello17@gmail.com)
